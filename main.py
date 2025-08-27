@@ -20,6 +20,12 @@ anim = {
     "t_prev": 0.0             # tiempo anterior (s)
 }
 
+# Variables para el espejo y rayos
+espejo_centro = (0.0, -1.0, 0.0) # Centro del plano del espejo
+espejo_normal = (0.0, 1.0, 0.0) # Normal del plano del espejo
+vertices = []
+proyectiles = []
+
 def norma(v):
     return math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2])
 
@@ -36,6 +42,7 @@ def iniciar_movimiento(A, B, duracion_seg=2.0):
 
     # Colocar el cubo en A
     cubo.set_centro(A)
+    actualizar_proyectiles()
 
     # Casos borde: distancia o duración nulas -> saltar directo a B
     if dist == 0.0 or duracion_seg <= 0.0:
@@ -72,15 +79,139 @@ def dibujar_ruta():
     glEnd()
     glEnable(GL_CULL_FACE)
 
-# ======================
+# Funciones parte 2 de la actividad
+
+def dot(v1, v2):
+    """Calcula el producto punto de dos vectores."""
+    return v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2]
+
+def normalizar(v):
+    """Normaliza un vector."""
+    n = norma(v)
+    if n == 0.0:
+        return (0.0, 0.0, 0.0)
+    return (v[0]/n, v[1]/n, v[2]/n)
+
+def calcular_reflejo(v_incidente, n):
+    """
+    Calcula el vector de un rayo reflejado.
+    """
+    v = normalizar(v_incidente)
+    n = normalizar(n)
+    
+    # 1) v_paralelo = n * (n . v)
+    v_paralelo = tuple(val * dot(n, v) for val in n)
+    
+    # 2) v_perpendicular = v - v_paralelo
+    v_perpendicular = (v[0] - v_paralelo[0], v[1] - v_paralelo[1], v[2] - v_paralelo[2])
+    
+    # 3) v_reflejado = v_perpendicular - v_paralelo  
+    v_reflejado = (v_perpendicular[0] - v_paralelo[0],
+                   v_perpendicular[1] - v_paralelo[1],
+                   v_perpendicular[2] - v_paralelo[2])
+    return v_reflejado
+
+def actualizar_proyectiles():
+    global proyectiles, vertices, cubo, espejo_centro, espejo_normal
+    proyectiles = []
+    
+    # Calcular los 8 vértices del cubo en su posición actual
+    half_arista = cubo.arista / 2.0
+    cx, cy, cz = cubo.cx, cubo.cy, cubo.cz
+    
+    vertices = [
+        (cx + half_arista, cy + half_arista, cz + half_arista),
+        (cx - half_arista, cy + half_arista, cz + half_arista),
+        (cx + half_arista, cy - half_arista, cz + half_arista),
+        (cx - half_arista, cy - half_arista, cz + half_arista),
+        (cx + half_arista, cy + half_arista, cz - half_arista),
+        (cx - half_arista, cy + half_arista, cz - half_arista),
+        (cx + half_arista, cy - half_arista, cz - half_arista),
+        (cx - half_arista, cy - half_arista, cz - half_arista)
+    ]
+    
+    for v_origen in vertices:
+        # Vector del rayo incidente (desde el vértice al centro del espejo)
+        v_incidente = (espejo_centro[0] - v_origen[0],
+                       espejo_centro[1] - v_origen[1],
+                       espejo_centro[2] - v_origen[2])
+
+        # Se encuentra el punto de intersección con el plano
+        # Ecuación del plano: (P - Po) . n = 0
+        # Ecuación del rayo: P = O + t*D
+        # (O + t*D - Po) . n = 0
+        # t*D.n + (O-Po).n = 0
+        # t = -((O-Po).n) / (D.n)
+        
+        O = v_origen
+        D = v_incidente
+        Po = espejo_centro
+        n = espejo_normal
+        
+        denominador = dot(D, n)
+        if abs(denominador) > 0.0001:
+            t = -dot((O[0]-Po[0], O[1]-Po[1], O[2]-Po[2]), n) / denominador
+            if t > 0:
+                punto_impacto = (O[0] + t * D[0],
+                                 O[1] + t * D[1],
+                                 O[2] + t * D[2])
+
+                # Vector de reflexión
+                v_reflejado = calcular_reflejo(v_incidente, espejo_normal)
+                
+                proyectiles.append({
+                    "origen": v_origen,
+                    "impacto": punto_impacto,
+                    "reflejado_dir": v_reflejado
+                })
+
+def draw_espejo():
+    """ Dibuja un plano rectangular para simular el espejo. """
+    glDisable(GL_CULL_FACE)
+    glBegin(GL_QUADS)
+    glColor4f(0.5, 0.5, 1.0, 0.4) # Color azul transparente
+    glVertex3f(-5.0, espejo_centro[1], -5.0)
+    glVertex3f( 5.0, espejo_centro[1], -5.0)
+    glVertex3f( 5.0, espejo_centro[1],  5.0)
+    glVertex3f(-5.0, espejo_centro[1],  5.0)
+    glEnd()
+    glEnable(GL_CULL_FACE)
+    
+def draw_proyectiles():
+    """ Dibuja los rayos incidentes y reflejados. """
+    glDisable(GL_CULL_FACE)
+    glLineWidth(2.5)
+    
+    for p in proyectiles:
+        # Rayo incidente (blanco)
+        glBegin(GL_LINES)
+        glColor3f(1.0, 1.0, 1.0)
+        glVertex3f(*p["origen"])
+        glVertex3f(*p["impacto"])
+        glEnd()
+        
+        # Rayo reflejado (amarillo)
+        glBegin(GL_LINES)
+        glColor3f(1.0, 1.0, 0.2)
+        # El rayo reflejado va del punto de impacto en la dirección del vector reflejado
+        fin_reflejo = (p["impacto"][0] + p["reflejado_dir"][0] * 5.0,
+                       p["impacto"][1] + p["reflejado_dir"][1] * 5.0,
+                       p["impacto"][2] + p["reflejado_dir"][2] * 5.0)
+        glVertex3f(*p["impacto"])
+        glVertex3f(*fin_reflejo)
+        glEnd()
+        
+    glEnable(GL_CULL_FACE)
+
 # OpenGL / GLUT
-# ======================
 def init_gl():
     glClearColor(0.08, 0.08, 0.1, 1.0)
     glEnable(GL_DEPTH_TEST)
     glShadeModel(GL_SMOOTH)
     glEnable(GL_CULL_FACE)
     glCullFace(GL_BACK)
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
 def reshape(w, h):
     h = max(h, 1)
@@ -95,7 +226,8 @@ def display():
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
     glLoadIdentity()
-    gluLookAt(0.0, 1.5, 6.0,  0.0, 0.0, 0.0,  0.0, 1.0, 0.0)
+    # Ajusta la cámara para ver la escena desde un nuevo ángulo
+    gluLookAt(4.0, 4.5, 8.0,  0.0, 0.0, 0.0,  0.0, 1.0, 0.0)
 
     glRotatef(angle, 0.0, 1.0, 0.0)
     glRotatef(angle * 0.5, 1.0, 0.0, 0.0)
@@ -105,6 +237,9 @@ def display():
         dibujar_ruta()
 
     cubo.draw()
+    draw_espejo()
+    draw_proyectiles()
+    
     glutSwapBuffers()
 
 def idle():
@@ -129,13 +264,14 @@ def idle():
         dist_rest = norma(rvec)
 
         if paso >= dist_rest or dist_rest == 0.0:
-            # Llega (o se pasa) -> clampa a B y detén animación
+            # Llega y se detiene
             cubo.set_centro(anim["B"])
             anim["activo"] = False
         else:
-            # Avanza usando TU función mover(velocidad, direccion, tiempo)
+            # Avanza 
             cubo.mover(anim["vel"], anim["dir"], dt)
-
+    
+    actualizar_proyectiles()
     glutPostRedisplay()
 
 def keyboard(key, x, y):
@@ -143,28 +279,26 @@ def keyboard(key, x, y):
         sys.exit(0)
     elif key == b'1':
         # Ejemplo: mover de A a B
-        iniciar_movimiento(A=(-2.0, 0.0, 0.0), B=( 2.0, 0.0, 0.0), duracion_seg=3.0)
+        iniciar_movimiento(A=(-2.0, 2.0, 0.0), B=( 2.0, 2.0, 0.0), duracion_seg=3.0)
     elif key == b'2':
         # Ejemplo: mover de B a A
-        iniciar_movimiento(A=( 2.0, 0.0, 0.0), B=(-2.0, 0.0, 0.0), duracion_seg=3.0)
+        iniciar_movimiento(A=( 2.0, 2.0, 0.0), B=(-2.0, 2.0, 0.0), duracion_seg=3.0)
 
 def main():
     global cubo
     glutInit(sys.argv)
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
     glutInitWindowSize(900, 600)
-    glutCreateWindow(b"Cubo OpenGL - animacion A->B con mover(vel, dir, tiempo)")
+    glutCreateWindow(b"Cubo OpenGL - animacion y reflejos")
 
     init_gl()
-    cubo = Cubo(centro=(0.0, 0.0, 0.0), arista=2.0)
+    cubo = Cubo(centro=(0.0, 2.0, 0.0), arista=2.0)
+    actualizar_proyectiles()
 
     glutDisplayFunc(display)
     glutReshapeFunc(reshape)
     glutIdleFunc(idle)
     glutKeyboardFunc(keyboard)
-
-    # Si quieres que arranque moviéndose automáticamente, descomenta:
-    # iniciar_movimiento(A=(-2.0, 0.0, 0.0), B=(2.0, 0.0, 0.0), duracion_seg=3.0)
 
     glutMainLoop()
 
