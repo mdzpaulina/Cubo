@@ -34,3 +34,6 @@ build/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Virtual environment for PyOpenGL
+entorno_pyopengl/
